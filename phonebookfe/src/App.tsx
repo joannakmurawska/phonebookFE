@@ -21,7 +21,7 @@ function App() {
   useEffect(() => {
     // Fetch phonebook data from backend
     axios
-      .get<Person[]>('http://localhost:8080/api/users')
+      .get<Person[]>('https://phonebookbe-do1g.onrender.com/api/users')
       .then(response => {
         setPersons(response.data)
         setLoading(false)
