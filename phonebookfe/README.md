@@ -45,6 +45,35 @@ export default defineConfig([
 
 You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
 
+## Configuration for Phonebook + Gemini
+
+1) Create a `.env.local` file (not committed) based on `.env.example`.
+
+Recommended (use backend proxy so your Google API key stays server-side):
+
+```
+VITE_API_BASE_URL=https://phonebookbe-do1g.onrender.com
+VITE_GEMINI_BACKEND_URL=http://localhost:8080
+```
+
+Alternatively (dev/testing only; exposes key in the client):
+
+```
+VITE_API_BASE_URL=https://phonebookbe-do1g.onrender.com
+VITE_GEMINI_API_KEY=your_google_gemini_api_key
+```
+
+2) Restart the dev server after changing env variables.
+
+### Expected backend endpoints
+
+- Phonebook API (CRUD):
+  - GET/POST `$(VITE_API_BASE_URL)/api/users`
+  - PUT/DELETE `$(VITE_API_BASE_URL)/api/users/:id`
+
+- Gemini proxy (optional but recommended):
+  - POST `$(VITE_GEMINI_BACKEND_URL)/api/gemini/json` → returns a JSON command
+  - POST `$(VITE_GEMINI_BACKEND_URL)/api/gemini` → returns plain text
 ```js
 // eslint.config.js
 import reactX from 'eslint-plugin-react-x'
