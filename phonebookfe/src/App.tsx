@@ -1,9 +1,12 @@
-import { useState } from 'react'
+import { useState} from 'react'
 import './App.css'
 import { interpretCrudInstruction } from './services/gemini'
 import type { CrudCommand } from './services/gemini'
 import { listUsers, createUser, updateUser, deleteUser } from './services/phonebook'
 import type { PersonDTO } from './services/phonebook'
+import PromptForm from './components/PromptForm'
+import UserList from './components/UserList'
+import Warning from './components/Warning'
 
 type Person = PersonDTO
 
@@ -13,76 +16,77 @@ function App() {
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
   const [aiResponse, setAiResponse] = useState('')
-  const [showPersons, setShowPersons] = useState(false)
+  const [warning, setWarning] = useState<string | null>(null)
+  const [showUsers, setShowUsers] = useState(false)
 
   const onSubmitPrompt = async (e: React.FormEvent) => {
     e.preventDefault()
     const trimmed = prompt.trim()
     if (!trimmed) return
-    
     setAiLoading(true)
     setAiError(null)
     setAiResponse('')
-    
+    setWarning(null)
     try {
       const cmd: CrudCommand = await interpretCrudInstruction(trimmed)
       let outcome = ''
-
       if (cmd.op === 'read') {
-        if (cmd.result && Array.isArray(cmd.result)) {
-          setPersons(cmd.result as Person[])
-        } else if (cmd.result) {
-          setPersons([cmd.result as Person])
-        } else {
-          setPersons([])
+        let users = await listUsers()
+        if (cmd.userName) {
+          const q = cmd.userName.toLowerCase()
+          users = users.filter(p => p.userName.toLowerCase().includes(q))
         }
-        setShowPersons(true)
-        outcome = `Read ${Array.isArray(cmd.result) ? cmd.result.length : (cmd.result ? 1 : 0)} user(s).`
+        setPersons(users)
+        setShowUsers(true)
+        outcome = `Read ${users.length} user(s).`
       }
-
       if (cmd.op === 'create' && cmd.userName && cmd.phoneNumbers && cmd.phoneNumbers.length > 0) {
-        const created = await createUser(cmd.userName, cmd.phoneNumbers)
-        setPersons(prev => [...prev, created as Person])
-        setShowPersons(true)
-        outcome = `Created user ${created.userName}.`
+        await createUser(cmd.userName, cmd.phoneNumbers)
+        const users = await listUsers()
+        setPersons(users)
+        setShowUsers(true)
+        outcome = `Created user ${cmd.userName}.`
       }
-
       if (cmd.op === 'update') {
         let id = cmd.id
+        let matches: Person[] = []
         if (!id && cmd.by === 'name' && cmd.userName) {
-          const match = persons.find(p => p.userName.toLowerCase() === cmd.userName!.toLowerCase())
-          id = match?.id
+          matches = persons.filter(p => p.userName.toLowerCase() === cmd.userName!.toLowerCase())
+          if (matches.length > 1) {
+            setWarning(`Multiple users match name '${cmd.userName}'. Only the first will be updated.`)
+          }
+          id = matches[0]?.id
         }
         if (id) {
-          const updated = await updateUser(id, cmd.updates ?? {})
-          setPersons(prev => prev.map(p => (p.id === id ? (updated as Person) : p)))
-          outcome = `Updated user ${updated.userName}.`
+          await updateUser(id, cmd.updates ?? {})
+          const users = await listUsers()
+          setPersons(users)
+          setShowUsers(true)
+          outcome = `Updated user with id ${id}.`
         } else {
           outcome = 'Could not resolve user to update.'
         }
       }
-
       if (cmd.op === 'delete') {
         let id = cmd.id
+        let matches: Person[] = []
         if (!id && cmd.by === 'name' && cmd.userName) {
-          const match = persons.find(p => p.userName.toLowerCase() === cmd.userName!.toLowerCase())
-          id = match?.id
+          matches = persons.filter(p => p.userName.toLowerCase() === cmd.userName!.toLowerCase())
+          if (matches.length > 1) {
+            setWarning(`Multiple users match name '${cmd.userName}'. Only the first will be deleted.`)
+          }
+          id = matches[0]?.id
         }
         if (id) {
           await deleteUser(id)
-          setPersons(prev => prev.filter(p => p.id !== id))
+          const users = await listUsers()
+          setPersons(users)
+          setShowUsers(true)
           outcome = `Deleted user with id ${id}.`
         } else {
           outcome = 'Could not resolve user to delete.'
         }
       }
-
-      if (cmd.op === 'create' || cmd.op === 'update' || cmd.op === 'delete') {
-        const updated = await listUsers()
-        setPersons(updated as Person[])
-        setShowPersons(true)
-      }
-
       setAiResponse(outcome)
       setPrompt('')
     } catch (err: any) {
@@ -99,21 +103,13 @@ function App() {
       
       <hr />
       <h2>Ask Gemini</h2>
-      <form onSubmit={onSubmitPrompt} style={{ display: 'grid', gap: 8, maxWidth: 700 }}>
-        <textarea
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          placeholder="Try: 'show all users' or 'add John with +48123456789' or 'delete John'"
-          rows={4}
-          style={{ padding: 8, fontFamily: 'monospace' }}
-        />
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center' }}>
-          <button style={{ backgroundColor: 'blue', color: 'white'}} type="submit" disabled={aiLoading || !prompt.trim()}>
-            {aiLoading ? 'Thinking…' : 'Send to Gemini'}
-          </button>
-          {aiError && <span style={{ color: 'crimson' }}>Error: {aiError}</span>}
-        </div>
-      </form>
+      <PromptForm
+        prompt={prompt}
+        loading={aiLoading}
+        error={aiError}
+        onChange={setPrompt}
+        onSubmit={onSubmitPrompt}
+      />
       
       {aiResponse && (
         <div style={{ marginTop: 20, padding: 12, backgroundColor: '#f0f0f0', borderRadius: 4 }}>
@@ -124,25 +120,11 @@ function App() {
 
       <hr />
       <h2>Numbers</h2>
-      {showPersons ? (
-        <div>
-          {persons.length === 0 ? (
-            <p>No users found.</p>
-          ) : (
-            persons.map(person => (
-              <div key={person.id} style={{ marginBottom: 16, padding: 12, border: '1px solid #ccc', borderRadius: 4 }}>
-                <h3>{person.userName}</h3>
-                <ul>
-                  {person.phoneNumbers.map(phone => (
-                    <li key={phone.id}>{phone.phoneNumber}</li>
-                  ))}
-                </ul>
-              </div>
-            ))
-          )}
-        </div>
+      <Warning message={warning} />
+      {showUsers ? (
+        <UserList persons={persons} />
       ) : (
-        <p style={{ color: '#999' }}>Users will appear here when you query them</p>
+        <p style={{ color: '#999' }}>Ask me to show users to see the list</p>
       )}
     </div>
   )
